@@ -1,3 +1,19 @@
-from config.config import config, Config, CameraConfig, FaceDetectorConfig
+from config.config import (
+    config,
+    Config,
+    CameraConfig,
+    DisplayConfig,
+    FaceDetectorConfig,
+    EyeTrackerConfig,
+    HeadPoseConfig,
+)
 
-__all__ = ["config", "Config", "CameraConfig", "FaceDetectorConfig"]
+__all__ = [
+    "config",
+    "Config",
+    "CameraConfig",
+    "DisplayConfig",
+    "FaceDetectorConfig",
+    "EyeTrackerConfig",
+    "HeadPoseConfig",
+]

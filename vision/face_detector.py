@@ -2,12 +2,10 @@
 
 Wraps the MediaPipe Tasks API FaceLandmarker (mediapipe >= 0.10 / 1.0.x) to
 provide a clean, testable interface that the rest of the application can use
-without any MediaPipe-specific knowledge leaking out.
+without exposing MediaPipe-specific complexity.
 
-Primary user: one face.  If multiple faces are returned by MediaPipe the one
-with the highest landmark confidence (first in the result list, as MediaPipe
-returns faces in detection-confidence order) is selected.  This is documented
-behaviour, not silent magic.
+Primary user: one face. If multiple faces are returned by MediaPipe, the first
+face (highest detection confidence) is selected as the primary user.
 """
 
 from __future__ import annotations
@@ -47,8 +45,8 @@ class FaceDetectionResult:
 
     face_detected: True if at least one face was found in the frame.
     raw_result:    The raw FaceLandmarkerResult from MediaPipe (None when no
-                   face is detected).  Kept for downstream modules that need
-                   direct landmark access (e.g., Phase 3 EAR calculation).
+                   face is detected). Kept for downstream modules that need
+                   direct landmark access (e.g. EAR calculation).
     """
 
     face_detected: bool
@@ -60,14 +58,15 @@ class FaceDetector:
 
     Usage
     -----
-    detector = FaceDetector()        # may raise if model file is missing
+    detector = FaceDetector()
     result   = detector.process(bgr_frame)
-    detector.draw(bgr_frame, result) # mutates frame in-place
+    detector.draw(bgr_frame, result)
     detector.close()
     """
 
     def __init__(self, detector_config: Optional[FaceDetectorConfig] = None) -> None:
         self._cfg = detector_config or config.face_detector
+        self._cfg.validate()
         self._landmarker: Optional[FaceLandmarker] = None
         self._init_landmarker()
 
@@ -84,8 +83,7 @@ class FaceDetector:
                 f"MediaPipe face-landmarker model not found at:\n"
                 f"  {model_path}\n\n"
                 "Download it by running:\n"
-                f"  python -c \"import urllib.request; "
-                f"urllib.request.urlretrieve('{_MODEL_DOWNLOAD_URL}', r'{model_path}')\"\n\n"
+                f"  python download_models.py\n\n"
                 "Or follow the instructions in models/README.md."
             )
 
@@ -109,15 +107,11 @@ class FaceDetector:
     def process(self, bgr_frame: np.ndarray) -> FaceDetectionResult:
         """Runs face landmark detection on a single BGR OpenCV frame.
 
-        The frame is converted to RGB internally; the original frame is not
-        mutated.
-
         Args:
-            bgr_frame: H×W×3 uint8 numpy array in BGR channel order.
+            bgr_frame: HxWx3 uint8 numpy array in BGR channel order.
 
         Returns:
-            FaceDetectionResult with face_detected flag and raw MediaPipe
-            result available for downstream use.
+            FaceDetectionResult with face_detected flag and raw MediaPipe result.
         """
         if self._landmarker is None:
             return FaceDetectionResult(face_detected=False)
@@ -137,21 +131,16 @@ class FaceDetector:
     def draw(self, bgr_frame: np.ndarray, result: FaceDetectionResult) -> None:
         """Draws face landmarks directly onto bgr_frame (in-place mutation).
 
-        When no face is detected, nothing is drawn.  Visualisation elements
+        When no face is detected, nothing is drawn. Visualisation elements
         are controlled by the FaceDetectorConfig flags.
-
-        Args:
-            bgr_frame: The frame that will be annotated.
-            result:    The FaceDetectionResult produced by process().
         """
         if not result.face_detected or result.raw_result is None:
             return
 
-        # MediaPipe Tasks drawing_utils.draw_landmarks works directly on the
-        # BGR numpy array; no additional colour conversion is required here.
         landmarks_list = result.raw_result.face_landmarks
+        if not landmarks_list:
+            return
 
-        # Select only the primary face (index 0 — highest-confidence detection).
         primary_landmarks = landmarks_list[0]
 
         if self._cfg.draw_tesselation:
@@ -191,10 +180,13 @@ class FaceDetector:
     def close(self) -> None:
         """Releases MediaPipe FaceLandmarker resources."""
         if self._landmarker is not None:
-            self._landmarker.close()
-            self._landmarker = None
+            try:
+                self._landmarker.close()
+            except Exception:
+                pass
+            finally:
+                self._landmarker = None
 
-    # Context-manager support so callers can use `with FaceDetector() as fd:`
     def __enter__(self) -> "FaceDetector":
         return self
 

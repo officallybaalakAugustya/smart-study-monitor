@@ -1,6 +1,6 @@
 # Smart Study Monitor - Python Dependencies
 # Computer Vision & Machine Learning
-opencv-python>=4.8.0
+opencv-contrib-python>=4.8.0
 mediapipe>=0.10.0
 numpy>=1.24.0
 ultralytics>=8.0.0
