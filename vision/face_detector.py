@@ -17,7 +17,7 @@ from typing import Optional
 import cv2
 import numpy as np
 
-from config.config import FaceDetectorConfig, config
+from config.config import BASE_DIR, FaceDetectorConfig, config
 
 # -- MediaPipe Tasks imports (mediapipe >= 0.10 / 1.0.x) ----------------------
 from mediapipe.tasks.python.core.base_options import BaseOptions
@@ -31,12 +31,6 @@ from mediapipe.tasks.python.vision import (
     drawing_utils,
 )
 from mediapipe.tasks.python.vision.core.image import Image as MpImage, ImageFormat
-
-# Official Google-hosted model bundle for the Tasks API Face Landmarker.
-_MODEL_DOWNLOAD_URL = (
-    "https://storage.googleapis.com/mediapipe-models/"
-    "face_landmarker/face_landmarker/float16/1/face_landmarker.task"
-)
 
 
 @dataclass
@@ -76,7 +70,8 @@ class FaceDetector:
 
     def _init_landmarker(self) -> None:
         """Creates and configures the MediaPipe FaceLandmarker instance."""
-        model_path = Path(self._cfg.model_path)
+        p = Path(self._cfg.model_path)
+        model_path = p if p.is_absolute() else (BASE_DIR / p).resolve()
 
         if not model_path.exists():
             raise FileNotFoundError(

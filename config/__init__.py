@@ -6,6 +6,12 @@ from config.config import (
     FaceDetectorConfig,
     EyeTrackerConfig,
     HeadPoseConfig,
+    PhoneDetectorConfig,
+    BehaviorConfig,
+    AlertConfig,
+    DatabaseConfig,
+    AnalyticsConfig,
+    DashboardConfig,
 )
 
 __all__ = [
@@ -16,4 +22,10 @@ __all__ = [
     "FaceDetectorConfig",
     "EyeTrackerConfig",
     "HeadPoseConfig",
+    "PhoneDetectorConfig",
+    "BehaviorConfig",
+    "AlertConfig",
+    "DatabaseConfig",
+    "AnalyticsConfig",
+    "DashboardConfig",
 ]

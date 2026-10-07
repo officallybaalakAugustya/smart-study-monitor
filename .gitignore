@@ -9,23 +9,40 @@ venv/
 ENV/
 env/
 
+# Environment Variables & Secrets
+.env
+.env.*
+!.env.example
+
 # IDE files
 .vscode/
 .idea/
 *.swp
 *.swo
 
-# Models & Weights (Large files)
+# Models & Weights (Binary files)
 models/*.pt
+models/*.pth
 models/*.onnx
+models/*.task
 !models/README.md
 
-# Database
+# Database & Runtime Data
 *.db
+*.db-wal
+*.db-shm
+*.sqlite
 *.sqlite3
+data/
+
+# Logs & Temporary Files
+*.log
+*.tmp
+*.bak
 
 # Test & Coverage
 .pytest_cache/
+.mypy_cache/
 .coverage
 htmlcov/
 

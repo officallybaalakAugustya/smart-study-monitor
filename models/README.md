@@ -52,12 +52,25 @@ smart-study-monitor/models/face_landmarker.task
 
 ### Model: `yolov8n.pt`
 
-**What it is:** The pretrained YOLOv8 Nano weights from Ultralytics, used for
-object detection (including the `cell phone` class).
+**What it is:** The official pretrained YOLOv8 Nano (`yolov8n.pt`) neural network
+weights from Ultralytics, trained on the COCO dataset containing 80 object classes.
 
-**How to obtain:** The Ultralytics library automatically downloads `yolov8n.pt`
-the first time it is used.  You can also download it manually from
-[https://github.com/ultralytics/assets/releases](https://github.com/ultralytics/assets/releases)
-and place it here.
+**Model Size:** Approximately 6.2 MB.
 
-> Phase 5 is not yet implemented.
+**Purpose:** Real-time mobile phone detection on CPU webcam feeds. Identifies whether
+a cell phone is visible within the user's study environment without making behavioral
+judgments or distraction assertions.
+
+**Why this model was selected:**
+- **Inference Latency:** Optimized for lightweight CPU inference (~38–40 ms on CPU at 320x320 image size).
+- **Handheld Accuracy:** High detection sensitivity for standard handheld smartphone form factors across portrait, landscape, and angled orientations.
+- **Dynamic Class Mapping:** Contains the standard COCO `cell phone` class, which the `PhoneDetector` dynamically resolves by class name rather than hardcoded IDs.
+
+**How to obtain:**
+1. **Automated script:** Run `python download_models.py` from the project root.
+2. **Auto-download on startup:** If `models/yolov8n.pt` is missing, the Ultralytics loader will automatically download it to `models/yolov8n.pt` on first startup.
+3. **Manual download:** Download directly from [Ultralytics Assets v8.4.0](https://github.com/ultralytics/assets/releases/download/v8.4.0/yolov8n.pt) and place at `models/yolov8n.pt`.
+
+**Version Control Exclusion:**
+The binary weight file `yolov8n.pt` is intentionally excluded from Git via `models/*.pt` in `.gitignore`.
+

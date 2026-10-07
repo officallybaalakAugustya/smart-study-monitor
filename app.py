@@ -20,6 +20,10 @@ from vision.camera import Camera
 from vision.face_detector import FaceDetector, FaceDetectionResult
 from vision.eye_tracker import EyeTracker, EyeTrackingResult
 from vision.head_pose import HeadPoseEstimator, HeadPoseResult
+from detection.phone_detector import PhoneDetector, PhoneDetectionResult
+from behavior.behavior_engine import BehaviorEngine, BehaviorResult
+from alerts.alert_manager import AlertManager
+from session.session_manager import SessionManager
 
 
 def _force_window_foreground(window_name: str) -> None:
@@ -111,6 +115,48 @@ def main() -> None:
 
     print("[OK] Head pose estimator initialized.", flush=True)
 
+    try:
+        phone_detector = PhoneDetector()
+    except Exception as exc:
+        print(f"\n[ERROR] Failed to initialize phone detector: {exc}", flush=True)
+        face_detector.close()
+        camera.release()
+        sys.exit(1)
+
+    print("[OK] Phone detector initialized.", flush=True)
+
+    try:
+        behavior_engine = BehaviorEngine()
+    except Exception as exc:
+        print(f"\n[ERROR] Failed to initialize behavior engine: {exc}", flush=True)
+        face_detector.close()
+        camera.release()
+        sys.exit(1)
+
+    print("[OK] Behavior engine initialized.", flush=True)
+
+    try:
+        alert_manager = AlertManager()
+    except Exception as exc:
+        print(f"\n[ERROR] Failed to initialize alert manager: {exc}", flush=True)
+        face_detector.close()
+        camera.release()
+        sys.exit(1)
+
+    print("[OK] Alert manager initialized.", flush=True)
+
+    try:
+        session_manager = SessionManager()
+        active_session = session_manager.start_session()
+    except Exception as exc:
+        print(f"\n[ERROR] Failed to initialize session manager: {exc}", flush=True)
+        alert_manager.close()
+        face_detector.close()
+        camera.release()
+        sys.exit(1)
+
+    print(f"[OK] Session #{active_session.session_id} started at {active_session.start_time}.", flush=True)
+
     # ------------------------------------------------------------------
     # UI Overlay Renderer & Interactive Toggles
     # ------------------------------------------------------------------
@@ -118,6 +164,7 @@ def main() -> None:
     overlay = OverlayRenderer(opacity=win_cfg.panel_opacity)
     show_hud = win_cfg.show_hud
     show_landmarks = win_cfg.show_face_landmarks
+    show_phone = win_cfg.show_phone_detection
     debug_mode = win_cfg.debug_mode
 
     # ------------------------------------------------------------------
@@ -140,7 +187,7 @@ def main() -> None:
         cv2.moveWindow(window_name, win_cfg.window_x, win_cfg.window_y)
 
     print(f"[OK] Window '{window_name}' opened ({win_cfg.window_width}x{win_cfg.window_height}).", flush=True)
-    print("     Shortcuts: [Q/ESC] Exit | [L] Toggle Mesh | [D] Toggle Debug | [H] Toggle HUD\n", flush=True)
+    print("     Shortcuts: [Q/ESC] Exit | [L] Mesh | [P] Phone | [D] Debug | [H] HUD\n", flush=True)
 
     # ------------------------------------------------------------------
     # Main frame processing loop
@@ -148,6 +195,8 @@ def main() -> None:
     last_face_result = FaceDetectionResult(face_detected=False)
     last_eye_result = EyeTrackingResult()
     last_pose_result = HeadPoseResult()
+    last_phone_result = PhoneDetectionResult(phone_detected=False)
+    last_behavior_result = BehaviorResult()
     frame_count = 0
     last_heartbeat = time.perf_counter()
 
@@ -169,7 +218,24 @@ def main() -> None:
             # 3. Head pose estimation (uses same face landmarks)
             last_pose_result = head_pose_estimator.process(last_face_result, frame.shape[:2])
 
-            # 4. Render computer vision landmark visualizations (if enabled)
+            # 4. Mobile phone detection (Ultralytics YOLO on CPU)
+            last_phone_result = phone_detector.detect(frame)
+
+            # 5. Behavior Engine evaluation (combines all CV signals into behavioral state)
+            last_behavior_result = behavior_engine.update(
+                last_face_result,
+                last_eye_result,
+                last_pose_result,
+                last_phone_result,
+            )
+
+            # 6. Alert Manager evaluation (translates BehaviorResult into non-blocking alerts)
+            alert_manager.handle_behavior(last_behavior_result)
+
+            # 7. Session Manager & Event Logger (state transition persistence, non-blocking)
+            session_manager.update(last_behavior_result)
+
+            # 8. Render computer vision landmark visualizations (if enabled)
             if show_landmarks and last_face_result.face_detected:
                 face_detector.draw(frame, last_face_result)
                 if win_cfg.show_eye_landmarks:
@@ -177,22 +243,30 @@ def main() -> None:
             if win_cfg.show_head_pose and last_face_result.face_detected:
                 head_pose_estimator.draw(frame, last_face_result, last_pose_result)
 
-            # 5. Render modern UI overlay panels
+            # 9. Render phone bounding boxes (if enabled and detected)
+            if show_phone and last_phone_result.phone_detected:
+                phone_detector.draw(frame, last_phone_result)
+
+            # 10. Render modern UI overlay panels with visual alert banner
             overlay.render(
                 frame=frame,
                 fps=camera.fps,
                 face_result=last_face_result,
                 eye_result=last_eye_result,
                 pose_result=last_pose_result,
+                phone_result=last_phone_result,
+                behavior_result=last_behavior_result,
+                visual_alert=alert_manager.visual,
                 show_hud=show_hud,
                 show_landmarks=show_landmarks,
+                show_phone_card=show_phone,
                 debug_mode=debug_mode,
             )
 
-            # 6. Display frame
+            # 11. Display frame
             cv2.imshow(window_name, frame)
 
-            # 7. Periodic console status logging
+            # 12. Periodic console status logging
             now = time.perf_counter()
             if now - last_heartbeat >= win_cfg.heartbeat_interval_sec:
                 face_status = "Detected" if last_face_result.face_detected else "Not Detected"
@@ -205,27 +279,37 @@ def main() -> None:
                 head_str = last_pose_result.direction.value
                 yaw_str = f"{last_pose_result.yaw:+.1f} deg" if last_pose_result.yaw is not None else "--"
                 pitch_str = f"{last_pose_result.pitch:+.1f} deg" if last_pose_result.pitch is not None else "--"
+                if last_phone_result.phone_detected and last_phone_result.confidence is not None:
+                    phone_str = f"Detected ({int(round(last_phone_result.confidence * 100))}%)"
+                else:
+                    phone_str = "Not Detected"
+                behavior_str = last_behavior_result.state.value
+                alert_status = "ACTIVE" if alert_manager.visual.is_active else "IDLE"
+                elapsed_sec = session_manager.get_elapsed_time()
+                session_timer_str = f"{int(elapsed_sec // 60):02d}:{int(elapsed_sec % 60):02d}"
                 print(
-                    f"  [Live] FPS: {camera.fps:4.1f} | Face: {face_status}"
-                    f" | Eyes: {eye_str} (EAR: {ear_str})"
+                    f"  [Live] FPS: {camera.fps:4.1f} | Session: {session_timer_str} | Behavior: {behavior_str} | Alert: {alert_status}"
+                    f" | Face: {face_status} | Phone: {phone_str} | Eyes: {eye_str} (EAR: {ear_str})"
                     f" | Head: {head_str} (Yaw: {yaw_str}, Pitch: {pitch_str})",
                     flush=True,
                 )
                 last_heartbeat = now
 
-            # 8. Interactive keyboard handling
+            # 13. Interactive keyboard handling
             key = cv2.waitKey(1) & 0xFF
             if key in (ord("q"), ord("Q"), 27):
                 print("\nExit key received. Shutting down...", flush=True)
                 break
             elif key in (ord("l"), ord("L")):
                 show_landmarks = not show_landmarks
+            elif key in (ord("p"), ord("P")):
+                show_phone = not show_phone
             elif key in (ord("d"), ord("D")):
                 debug_mode = not debug_mode
             elif key in (ord("h"), ord("H")):
                 show_hud = not show_hud
 
-            # 9. Check for window close button [X]
+            # 14. Check for window close button [X]
             try:
                 if cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE) < 1:
                     print("\nWindow closed. Shutting down...", flush=True)
@@ -236,6 +320,31 @@ def main() -> None:
     except KeyboardInterrupt:
         print("\nInterrupted by user. Shutting down...", flush=True)
     finally:
+        if session_manager.is_active():
+            ended_session = session_manager.end_session()
+            if ended_session:
+                print(
+                    f"Session #{ended_session.session_id} ended (Duration: {ended_session.duration_seconds:.1f}s, Transitions: {session_manager.get_total_transitions()}).",
+                    flush=True,
+                )
+                try:
+                    from analytics.session_analytics import SessionAnalytics
+                    analytics = SessionAnalytics(event_logger=session_manager.event_logger)
+                    summary = analytics.get_session_summary(ended_session.session_id)
+                    if summary:
+                        score_str = f"{summary.focus_score:.1f}" if summary.focus_score is not None else "N/A (insufficient duration)"
+                        print(
+                            f"  [Summary] Focus Score: {score_str} | Focused: {summary.focused_seconds:.1f}s"
+                            f" | Distracted: {summary.distracted_seconds:.1f}s | Phone: {summary.phone_detected_seconds:.1f}s"
+                            f" | Drowsy: {summary.drowsy_seconds:.1f}s | Away: {summary.away_from_desk_seconds:.1f}s",
+                            flush=True,
+                        )
+                except Exception as exc:
+                    print(f"  [Note] Post-session summary unavailable: {exc}", flush=True)
+        session_manager.close()
+        alert_manager.close()
+        behavior_engine.reset()
+        phone_detector.reset()
         face_detector.close()
         camera.release()
         cv2.destroyAllWindows()

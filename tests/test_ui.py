@@ -12,6 +12,8 @@ from ui.overlay import OverlayRenderer
 from vision.face_detector import FaceDetectionResult
 from vision.eye_tracker import EyeTrackingResult, EyeState
 from vision.head_pose import HeadPoseResult, HeadDirection
+from detection.phone_detector import PhoneDetectionResult, PhoneBoundingBox
+from behavior.behavior_engine import BehaviorResult, BehaviorState, BehaviorReason
 
 
 class TestUITheme:
@@ -158,14 +160,77 @@ class TestOverlayRenderer:
 
         for w, h in [(640, 480), (960, 720), (1280, 720), (800, 600)]:
             frame = np.zeros((h, w, 3), dtype=np.uint8)
+            phone_res = PhoneDetectionResult(
+                phone_detected=True,
+                confidence=0.88,
+                bbox=(10, 10, 100, 200),
+                detections=[PhoneBoundingBox(10, 10, 100, 200, 0.88)],
+            )
             renderer.render(
                 frame,
                 fps=29.0,
                 face_result=face_res,
                 eye_result=eye_res,
                 pose_result=pose_res,
+                phone_result=phone_res,
                 show_hud=True,
                 show_landmarks=True,
+                show_phone_card=True,
                 debug_mode=True,
             )
             assert np.count_nonzero(frame) > 0
+
+    def test_draw_phone_card_detected(self):
+        renderer = OverlayRenderer()
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        phone_res = PhoneDetectionResult(
+            phone_detected=True,
+            confidence=0.91,
+            bbox=(20, 20, 120, 240),
+            detections=[PhoneBoundingBox(20, 20, 120, 240, 0.91)],
+            inference_time_ms=38.5,
+            is_cached=False,
+        )
+        renderer.draw_phone_card(frame, 400, 50, 220, 80, phone_res, debug_mode=True)
+        assert np.count_nonzero(frame[50:130, 400:620]) > 0
+
+    def test_draw_phone_card_not_detected(self):
+        renderer = OverlayRenderer()
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        phone_res = PhoneDetectionResult(
+            phone_detected=False,
+            confidence=None,
+            bbox=None,
+            detections=[],
+            inference_time_ms=35.0,
+            is_cached=True,
+        )
+        renderer.draw_phone_card(frame, 400, 50, 220, 80, phone_res, debug_mode=False)
+        assert np.count_nonzero(frame[50:130, 400:620]) > 0
+
+    def test_draw_behavior_card_states(self):
+        renderer = OverlayRenderer()
+        for state in BehaviorState:
+            frame = np.zeros((480, 640, 3), dtype=np.uint8)
+            behavior_res = BehaviorResult(
+                state=state,
+                state_started_at=0.0,
+                state_duration=12.5,
+                reason=BehaviorReason.NORMAL,
+                signals={},
+            )
+            renderer.draw_behavior_card(frame, 20, 50, 220, 80, behavior_res, debug_mode=True)
+            assert np.count_nonzero(frame[50:130, 20:240]) > 0
+
+    def test_draw_behavior_card_minute_duration(self):
+        renderer = OverlayRenderer()
+        frame = np.zeros((480, 640, 3), dtype=np.uint8)
+        behavior_res = BehaviorResult(
+            state=BehaviorState.FOCUSED,
+            state_started_at=0.0,
+            state_duration=125.0,
+            reason=BehaviorReason.NORMAL,
+            signals={},
+        )
+        renderer.draw_behavior_card(frame, 20, 50, 220, 80, behavior_res, debug_mode=False)
+        assert np.count_nonzero(frame[50:130, 20:240]) > 0

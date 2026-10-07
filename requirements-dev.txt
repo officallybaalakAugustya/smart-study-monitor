@@ -1,0 +1,6 @@
+# Development & Testing dependencies for Smart Study Monitor
+-r requirements.txt
+
+# Development / Testing tools
+pytest>=7.4.0
+psutil>=5.9.0

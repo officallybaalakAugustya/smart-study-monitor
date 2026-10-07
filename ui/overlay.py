@@ -15,6 +15,8 @@ from ui.theme import UIColors, UITypography, UILayout
 from vision.face_detector import FaceDetectionResult
 from vision.eye_tracker import EyeTrackingResult, EyeState
 from vision.head_pose import HeadPoseResult, HeadDirection
+from detection.phone_detector import PhoneDetectionResult
+from behavior.behavior_engine import BehaviorResult, BehaviorState
 
 
 class OverlayRenderer:
@@ -383,6 +385,182 @@ class OverlayRenderer:
                 UITypography.LINE_TYPE,
             )
 
+    def draw_phone_card(
+        self,
+        frame: np.ndarray,
+        x: int,
+        y: int,
+        w: int,
+        h: int,
+        phone_result: PhoneDetectionResult,
+        debug_mode: bool = False,
+    ) -> None:
+        """Draws the Phone Detection status card."""
+        self.draw_panel(frame, x, y, w, h, bg_color=UIColors.CARD_BG, border_color=UIColors.CARD_BORDER)
+
+        # Card header
+        cv2.putText(
+            frame,
+            "PHONE DETECTION",
+            (x + 14, y + 20),
+            UITypography.FONT,
+            UITypography.SCALE_HEADER,
+            UIColors.TEXT_SECONDARY,
+            1,
+            UITypography.LINE_TYPE,
+        )
+        cv2.line(frame, (x + 14, y + 26), (x + w - 14, y + 26), UIColors.DIVIDER, 1, cv2.LINE_AA)
+
+        # Status badge row
+        if phone_result.phone_detected:
+            dot_color = UIColors.WARNING  # Warm amber (non-alarming detection)
+            badge_label = "PHONE DETECTED"
+            dot_filled = True
+        else:
+            dot_color = UIColors.NEUTRAL  # Slate gray
+            badge_label = "NOT DETECTED"
+            dot_filled = False
+
+        self.draw_status_dot(frame, x + 20, y + 46, dot_color, filled=dot_filled, radius=4)
+        cv2.putText(
+            frame,
+            badge_label,
+            (x + 32, y + 50),
+            UITypography.FONT,
+            UITypography.SCALE_BADGE,
+            dot_color,
+            UITypography.THICK_BADGE,
+            UITypography.LINE_TYPE,
+        )
+
+        # Detail row: confidence or waiting text
+        if phone_result.phone_detected and phone_result.confidence is not None:
+            pct = int(round(phone_result.confidence * 100))
+            count_suffix = f" ({len(phone_result.detections)} in view)" if len(phone_result.detections) > 1 else ""
+            conf_str = f"Confidence: {pct}%{count_suffix}"
+            cv2.putText(
+                frame,
+                conf_str,
+                (x + 32, y + 70),
+                UITypography.FONT,
+                UITypography.SCALE_METRIC,
+                UIColors.TEXT_PRIMARY,
+                1,
+                UITypography.LINE_TYPE,
+            )
+        else:
+            cv2.putText(
+                frame,
+                "No phone in view",
+                (x + 32, y + 70),
+                UITypography.FONT,
+                UITypography.SCALE_CAPTION,
+                UIColors.TEXT_DIM,
+                1,
+                UITypography.LINE_TYPE,
+            )
+
+        # Debug row
+        if debug_mode:
+            cache_flag = "Yes" if phone_result.is_cached else "No"
+            debug_str = f"Infer: {phone_result.inference_time_ms:.1f}ms | Cache: {cache_flag}"
+            cv2.putText(
+                frame,
+                debug_str,
+                (x + 14, y + 90),
+                UITypography.FONT,
+                UITypography.SCALE_CAPTION,
+                UIColors.TEXT_DIM,
+                1,
+                UITypography.LINE_TYPE,
+            )
+
+    def draw_behavior_card(
+        self,
+        frame: np.ndarray,
+        x: int,
+        y: int,
+        w: int,
+        h: int,
+        behavior_result: BehaviorResult,
+        debug_mode: bool = False,
+    ) -> None:
+        """Draws the Behavior Engine status card showing current behavioral state."""
+        self.draw_panel(frame, x, y, w, h, bg_color=UIColors.CARD_BG, border_color=UIColors.CARD_BORDER)
+
+        # Card header
+        cv2.putText(
+            frame,
+            "BEHAVIOR STATUS",
+            (x + 14, y + 20),
+            UITypography.FONT,
+            UITypography.SCALE_HEADER,
+            UIColors.TEXT_SECONDARY,
+            1,
+            UITypography.LINE_TYPE,
+        )
+        cv2.line(frame, (x + 14, y + 26), (x + w - 14, y + 26), UIColors.DIVIDER, 1, cv2.LINE_AA)
+
+        # Map state to display label and color
+        state = behavior_result.state
+        state_display = {
+            BehaviorState.FOCUSED: ("FOCUSED", UIColors.SUCCESS),
+            BehaviorState.DISTRACTED: ("DISTRACTED", UIColors.WARNING),
+            BehaviorState.DROWSY: ("DROWSY", UIColors.DANGER),
+            BehaviorState.PHONE_DETECTED: ("PHONE DETECTED", UIColors.WARNING),
+            BehaviorState.AWAY_FROM_DESK: ("AWAY FROM DESK", UIColors.NEUTRAL),
+            BehaviorState.NO_FACE: ("NO FACE", UIColors.NEUTRAL),
+            BehaviorState.UNKNOWN: ("INITIALIZING", UIColors.NEUTRAL),
+        }
+        label, color = state_display.get(state, ("UNKNOWN", UIColors.NEUTRAL))
+
+        # Status dot and label
+        dot_filled = state not in (BehaviorState.UNKNOWN, BehaviorState.NO_FACE)
+        self.draw_status_dot(frame, x + 20, y + 46, color, filled=dot_filled, radius=4)
+        cv2.putText(
+            frame,
+            label,
+            (x + 32, y + 50),
+            UITypography.FONT,
+            UITypography.SCALE_BADGE,
+            color,
+            UITypography.THICK_BADGE,
+            UITypography.LINE_TYPE,
+        )
+
+        # Duration row
+        duration = behavior_result.state_duration
+        if duration < 60:
+            dur_str = f"Duration: {duration:.0f}s"
+        else:
+            dur_str = f"Duration: {int(duration // 60)}m {int(duration % 60)}s"
+
+        cv2.putText(
+            frame,
+            dur_str,
+            (x + 32, y + 70),
+            UITypography.FONT,
+            UITypography.SCALE_METRIC,
+            UIColors.TEXT_PRIMARY,
+            1,
+            UITypography.LINE_TYPE,
+        )
+
+        # Debug row: reason code
+        if debug_mode:
+            reason_val = behavior_result.reason.value if hasattr(behavior_result.reason, "value") else str(behavior_result.reason)
+            reason_str = f"Reason: {reason_val}"
+            cv2.putText(
+                frame,
+                reason_str,
+                (x + 14, y + 90),
+                UITypography.FONT,
+                UITypography.SCALE_CAPTION,
+                UIColors.TEXT_DIM,
+                1,
+                UITypography.LINE_TYPE,
+            )
+
     # ------------------------------------------------------------------
     # Master Render Entry Point
     # ------------------------------------------------------------------
@@ -394,8 +572,12 @@ class OverlayRenderer:
         face_result: FaceDetectionResult,
         eye_result: EyeTrackingResult,
         pose_result: HeadPoseResult,
+        phone_result: Optional[PhoneDetectionResult] = None,
+        behavior_result: Optional[BehaviorResult] = None,
+        visual_alert: Optional[object] = None,
         show_hud: bool = True,
         show_landmarks: bool = True,
+        show_phone_card: bool = True,
         debug_mode: bool = False,
     ) -> None:
         """Renders the complete modern UI overlay onto the frame."""
@@ -436,7 +618,39 @@ class OverlayRenderer:
             debug_mode=debug_mode,
         )
 
-        # 5. Bottom Footer
+        # 5. Top-Right Card: Phone Detection (if available and enabled)
+        if show_phone_card and phone_result is not None:
+            phone_w = min(240, int(w * 0.30))
+            phone_h = 82 if not debug_mode else 100
+            self.draw_phone_card(
+                frame,
+                x=w - phone_w - margin_x,
+                y=UILayout.HEADER_HEIGHT + 10,
+                w=phone_w,
+                h=phone_h,
+                phone_result=phone_result,
+                debug_mode=debug_mode,
+            )
+
+        # 6. Top-Left Card: Behavior Status (if available)
+        if behavior_result is not None:
+            behavior_w = min(240, int(w * 0.30))
+            behavior_h = 82 if not debug_mode else 100
+            self.draw_behavior_card(
+                frame,
+                x=margin_x,
+                y=UILayout.HEADER_HEIGHT + 10,
+                w=behavior_w,
+                h=behavior_h,
+                behavior_result=behavior_result,
+                debug_mode=debug_mode,
+            )
+
+        # 7. Visual Alert Banner (Phase 7 - non-blocking overlay)
+        if visual_alert is not None and hasattr(visual_alert, "draw"):
+            visual_alert.draw(frame)
+
+        # 8. Bottom Footer
         self.draw_footer(
             frame,
             fps,
